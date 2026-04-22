@@ -1,0 +1,1 @@
+.\venv\Scripts\python.exe -m nuitka app.py --onefile --windows-console-mode=disable --output-dir=build --output-filename=PLC_Nova_tray.exe --windows-icon-from-ico="..\app_icon.ico" --include-data-dir=web=web

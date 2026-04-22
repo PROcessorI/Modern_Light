@@ -1,0 +1,6 @@
+__pycache__
+build
+venv
+*.pyc
+*.log
+.agents

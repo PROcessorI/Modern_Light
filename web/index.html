@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PLC Nova Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script type="text/javascript" src="/eel.js"></script>
+</head>
+<body>
+  <div class="bg-shape shape-a"></div>
+  <div class="bg-shape shape-b"></div>
+  <div class="bg-shape shape-c"></div>
+
+  <div class="shell">
+    <aside class="sidebar card">
+      <div class="brand-wrap">
+        <p class="eyebrow">PLC CONTROL SUITE</p>
+        <h1>Nova Console</h1>
+        <p class="muted">Асинхронная панель управления контроллером PLC.</p>
+      </div>
+
+      <div class="status-row">
+        <span id="statusBadge" class="badge offline">Отключено</span>
+        <span id="modeBadge" class="badge mode-real">Реальное устройство</span>
+      </div>
+
+      <button id="themeToggleBtn" class="btn ghost full">Тема: светлая (Theme=1)</button>
+
+      <label class="field-label" for="portInput">COM-порт</label>
+      <input id="portInput" list="portHints" placeholder="COM4">
+      <datalist id="portHints"></datalist>
+      <div id="portQuickList" class="port-quick-list"></div>
+
+      <label class="field-label" for="baudInput">Скорость (baudrate)</label>
+      <input id="baudInput" type="number" min="1200" step="300" value="9600">
+
+      <div class="inline actions">
+        <button id="connectBtn" class="btn primary">Подключить</button>
+        <button id="disconnectBtn" class="btn ghost">Отключить</button>
+        <button id="refreshPortsBtn" class="btn ghost">Порты</button>
+      </div>
+
+      <button id="saveConnBtn" class="btn ghost full">Сохранить как по умолчанию</button>
+
+      <section class="inner-card">
+        <h3>Быстрая COM-команда</h3>
+        <div class="inline compact">
+          <div>
+            <label class="field-label" for="comAddress">Адрес</label>
+            <input id="comAddress" type="number" min="0" max="255" value="1">
+          </div>
+          <div>
+            <label class="field-label" for="comCode">Код</label>
+            <input id="comCode" type="number" min="0" max="255" value="10">
+          </div>
+        </div>
+        <button id="sendComBtn" class="btn accent full">Отправить COM</button>
+      </section>
+    </aside>
+
+    <main class="main">
+      <header class="topbar card">
+        <div>
+          <p class="eyebrow">ОПЕРАЦИИ</p>
+          <h2>Рабочее пространство контроллера</h2>
+        </div>
+
+        <div class="topbar-right">
+          <div class="page-tabs">
+            <button class="page-tab active" data-page="page-base">База</button>
+            <button class="page-tab" data-page="page-control">Управление</button>
+            <button class="page-tab" data-page="page-schedule">Расписание</button>
+            <button class="page-tab" data-page="page-protocol">Протокол</button>
+            <button class="page-tab" data-page="page-help">Справка</button>
+          </div>
+          <button id="refreshLogsBtn" class="btn ghost">Обновить лог</button>
+        </div>
+      </header>
+
+      <section id="page-base" class="page active">
+        <div class="cards-grid">
+          <article class="panel card">
+            <div class="panel-head">
+              <h3>Часы и календарь</h3>
+              <div class="inline compact">
+                <button id="readTimeBtn" class="btn ghost">Чтение</button>
+                <button id="localTimeBtn" class="btn ghost">С локального ПК</button>
+                <button id="writeTimeBtn" class="btn primary">Запись</button>
+              </div>
+            </div>
+            <div class="form-grid form-three">
+              <div>
+                <label class="field-label" for="timeValue">Время (ЧЧ:ММ:СС)</label>
+                <input id="timeValue" placeholder="16:05:49">
+              </div>
+              <div>
+                <label class="field-label" for="dayValue">День недели (1..7)</label>
+                <input id="dayValue" type="number" min="1" max="7" value="1">
+              </div>
+              <div>
+                <label class="field-label" for="dateValue">Дата (ДД.ММ.ГГ)</label>
+                <input id="dateValue" placeholder="25.05.16">
+              </div>
+            </div>
+          </article>
+
+          <article class="panel card">
+            <div class="panel-head">
+              <h3>Географические координаты</h3>
+              <div class="inline compact">
+                <button id="readGeoBtn" class="btn ghost">Чтение</button>
+                <button id="writeGeoBtn" class="btn primary">Запись</button>
+              </div>
+            </div>
+            <div class="form-grid form-three">
+              <div>
+                <label class="field-label" for="latValue">Широта</label>
+                <input id="latValue" type="number" min="35" max="74" value="55">
+              </div>
+              <div>
+                <label class="field-label" for="lonValue">Долгота</label>
+                <input id="lonValue" type="number" min="20" max="160" value="37">
+              </div>
+              <div>
+                <label class="field-label" for="zoneValue">Часовой пояс</label>
+                <input id="zoneValue" type="number" min="0" max="12" value="3">
+              </div>
+            </div>
+          </article>
+
+          <article class="panel card">
+            <div class="panel-head">
+              <h3>Астрономическая таблица</h3>
+              <button id="generateAstronomyBtn" class="btn accent">Сформировать</button>
+            </div>
+            <div class="form-grid form-three">
+              <div>
+                <label class="field-label" for="astroYear">Год</label>
+                <input id="astroYear" type="number" min="2000" max="2100">
+              </div>
+              <div>
+                <label class="field-label" for="astroMorningCorr">Коррекция утра (мин)</label>
+                <input id="astroMorningCorr" type="number" min="-120" max="120" value="0">
+              </div>
+              <div>
+                <label class="field-label" for="astroEveningCorr">Коррекция вечера (мин)</label>
+                <input id="astroEveningCorr" type="number" min="-120" max="120" value="0">
+              </div>
+            </div>
+            <pre id="astronomyResult" class="response-box">Файлы пока не сформированы.</pre>
+          </article>
+
+          <article class="panel card">
+            <div class="panel-head">
+              <h3>Ключи и маска</h3>
+            </div>
+            <div class="binary-grid">
+              <section class="inner-card">
+                <div class="inner-head">
+                  <h4>KEYS</h4>
+                  <div class="inline compact">
+                    <button id="readKeysBtn" class="btn ghost">Чтение</button>
+                    <button id="writeKeysBtn" class="btn primary">Запись</button>
+                  </div>
+                </div>
+                <label class="switch-line"><input id="keysA" type="checkbox"><span>Канал A</span></label>
+                <label class="switch-line"><input id="keysB" type="checkbox"><span>Канал B</span></label>
+                <label class="switch-line"><input id="keysC" type="checkbox"><span>Канал C</span></label>
+              </section>
+
+              <section class="inner-card">
+                <div class="inner-head">
+                  <h4>MASK</h4>
+                  <div class="inline compact">
+                    <button id="readMaskBtn" class="btn ghost">Чтение</button>
+                    <button id="writeMaskBtn" class="btn primary">Запись</button>
+                  </div>
+                </div>
+                <label class="switch-line"><input id="maskA" type="checkbox"><span>Канал A</span></label>
+                <label class="switch-line"><input id="maskB" type="checkbox"><span>Канал B</span></label>
+                <label class="switch-line"><input id="maskC" type="checkbox"><span>Канал C</span></label>
+              </section>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="page-control" class="page">
+        <div class="cards-grid">
+          <article class="panel card wide luminaire-panel">
+            <div class="panel-head">
+              <h3>Управление светильниками</h3>
+              <span class="muted">Светильник AI или группа AG</span>
+            </div>
+
+            <div class="form-grid form-two">
+              <div>
+                <label class="field-label" for="fixtureAI">Номер светильника AI (1..220)</label>
+                  <input id="fixtureAI" type="number" min="1" max="220" placeholder="Например 12">
+              </div>
+              <div>
+                <label class="field-label" for="fixtureAG">Номер группы AG (0..29)</label>
+                  <input id="fixtureAG" type="number" min="0" max="29" value="0" placeholder="Например 3">
+              </div>
+            </div>
+
+            <div class="spectrum-grid">
+              <section class="inner-card spectrum-row">
+                <h4>Красный</h4>
+                <div class="spectrum-line">
+                  <input id="specRed" type="number" min="0" max="100" value="0">
+                  <button id="specRedApplyBtn" class="btn ghost spectrum-ok-btn">OK</button>
+                </div>
+              </section>
+
+              <section class="inner-card spectrum-row">
+                <h4>Синий</h4>
+                <div class="spectrum-line">
+                  <input id="specBlue" type="number" min="0" max="100" value="0">
+                  <button id="specBlueApplyBtn" class="btn ghost spectrum-ok-btn">OK</button>
+                </div>
+              </section>
+
+              <section class="inner-card spectrum-row">
+                <h4>Белый</h4>
+                <div class="spectrum-line">
+                  <input id="specWhite" type="number" min="0" max="100" value="0">
+                  <button id="specWhiteApplyBtn" class="btn ghost spectrum-ok-btn">OK</button>
+                </div>
+              </section>
+
+              <section class="inner-card spectrum-row">
+                <h4>Дальний красный</h4>
+                <div class="spectrum-line">
+                  <input id="specFarRed" type="number" min="0" max="100" value="0">
+                  <button id="specFarRedApplyBtn" class="btn ghost spectrum-ok-btn">OK</button>
+                </div>
+              </section>
+            </div>
+
+            <div class="inline compact wrap scenario-actions">
+              <button id="applySpectrumBtn" class="btn primary">Применить все спектры</button>
+              <button id="saveScenarioBtn" class="btn success">Запись сценария</button>
+            </div>
+
+            <!-- === Секция: Сценарии (управление, запись, повтор) === -->
+            <section class="inner-card scenario-simple">
+              <div class="panel-head">
+                <h4>Сценарии</h4>
+                <span class="muted">Текущий, запись, воспроизведение</span>
+              </div>
+              <div class="form-grid form-three">
+                <div>
+                  <label class="field-label" for="sceneCurrentSimple">Сценарий (текущий, 1..20)</label>
+                  <input id="sceneCurrentSimple" type="number" min="1" max="20" value="1" disabled>
+                </div>
+                <div>
+                  <label class="field-label" for="sceneSaveSimple">Запись сценария (1..20)</label>
+                  <input id="sceneSaveSimple" type="number" min="1" max="20" placeholder="Пусто = текущий">
+                </div>
+                <div>
+                  <label class="field-label" for="scenePlaySimple">Воспроизв. сценария (1..20)</label>
+                  <input id="scenePlaySimple" type="number" min="1" max="20" placeholder="Пусто = текущий">
+                </div>
+              </div>
+
+              <label class="switch-line"><input id="scenarioRepeatEnabled" type="checkbox"><span>Повторять сценарий каждые</span></label>
+              <div class="repeat-grid">
+                <div>
+                  <label class="field-label" for="scenarioRepeatHours">Часы</label>
+                  <input id="scenarioRepeatHours" type="number" min="0" max="23" value="0">
+                </div>
+                <div>
+                  <label class="field-label" for="scenarioRepeatMinutes">Минуты</label>
+                  <input id="scenarioRepeatMinutes" type="number" min="0" max="59" value="0">
+                </div>
+                <div>
+                  <label class="field-label" for="scenarioRepeatSeconds">Секунды</label>
+                  <input id="scenarioRepeatSeconds" type="number" min="0" max="59" value="0">
+                </div>
+              </div>
+
+              <div class="inline compact wrap scenario-actions">
+                <button id="playScenarioBtn" class="btn primary">Воспроизведение</button>
+                <button id="stopScenarioRepeatBtn" class="btn ghost">Остановить повтор</button>
+              </div>
+              <p id="scenarioRepeatStatus" class="muted">Повтор выключен</p>
+            </section>
+          </article>
+
+          <article class="panel card legacy-control-extra">
+            <div class="panel-head">
+              <h3>Управление яркостью</h3>
+              <button id="sendBrightnessBtn" class="btn primary">Выполнить</button>
+            </div>
+            <div class="form-grid form-two">
+              <div>
+                <label class="field-label" for="brightAI">Адрес AI (1..220)</label>
+                <input id="brightAI" type="number" min="1" max="220" placeholder="Индивидуальный">
+              </div>
+              <div>
+                <label class="field-label" for="brightAG">Адрес AG (0..29)</label>
+                <input id="brightAG" type="number" min="0" max="29" placeholder="Групповой">
+              </div>
+            </div>
+            <div class="mode-toggle" id="brightModeSwitch">
+              <button type="button" class="mode-chip active" data-bright-mode="level">Яркость</button>
+              <button type="button" class="mode-chip" data-bright-mode="scene">Сценарий</button>
+              <button type="button" class="mode-chip" data-bright-mode="command">Сервис</button>
+            </div>
+
+            <div id="brightModeLevelBox" class="mode-box active">
+              <label class="field-label" for="brightLevel">Яркость (0..10)</label>
+              <div class="range-line">
+                <input id="brightLevel" type="number" min="0" max="10" value="5">
+                <input id="brightLevelRange" type="range" min="0" max="10" step="1" value="5">
+                <span id="brightLevelValue" class="range-value">5</span>
+              </div>
+              <div class="quick-row">
+                <button type="button" class="quick-chip" data-bright-level="0">0</button>
+                <button type="button" class="quick-chip" data-bright-level="2">2</button>
+                <button type="button" class="quick-chip" data-bright-level="5">5</button>
+                <button type="button" class="quick-chip" data-bright-level="8">8</button>
+                <button type="button" class="quick-chip" data-bright-level="10">10</button>
+              </div>
+            </div>
+
+            <div id="brightModeSceneBox" class="mode-box">
+              <label class="field-label" for="brightScene">Сценарий (1..20)</label>
+              <div class="range-line">
+                <input id="brightScene" type="number" min="1" max="20" value="1">
+                <input id="brightSceneRange" type="range" min="1" max="20" step="1" value="1">
+                <span id="brightSceneValue" class="range-value">1</span>
+              </div>
+              <div class="quick-row">
+                <button type="button" class="quick-chip" data-bright-scene="1">1</button>
+                <button type="button" class="quick-chip" data-bright-scene="5">5</button>
+                <button type="button" class="quick-chip" data-bright-scene="10">10</button>
+                <button type="button" class="quick-chip" data-bright-scene="15">15</button>
+                <button type="button" class="quick-chip" data-bright-scene="20">20</button>
+              </div>
+            </div>
+
+            <div id="brightModeCommandBox" class="mode-box">
+              <label class="field-label" for="brightCommand">Сервисный код (230..250)</label>
+              <div class="range-line">
+                <input id="brightCommand" type="number" min="230" max="250" value="230">
+                <input id="brightCommandRange" type="range" min="230" max="250" step="1" value="230">
+                <span id="brightCommandValue" class="range-value">230</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel card legacy-control-extra">
+            <div class="panel-head">
+              <h3>Программирование AI (Unit9)</h3>
+            </div>
+            <div class="form-grid form-two">
+              <div>
+                <label class="field-label" for="aiProgramValue">Новый AI-адрес (1..220)</label>
+                <input id="aiProgramValue" type="number" min="1" max="220" value="1">
+              </div>
+            </div>
+            <div class="inline compact wrap">
+              <button id="adrPrgBtn" class="btn ghost">Включить ADRPRG=1</button>
+              <button id="setAiBtn" class="btn primary">Записать COM 255,AI</button>
+            </div>
+          </article>
+
+          <!-- === Секция: Программирование сценариев (COMA) === -->
+          <article class="panel card wide legacy-control-extra">
+            <div class="panel-head">
+              <h3>Программирование сценариев (COMA)</h3>
+            </div>
+            <div class="form-grid form-two">
+              <div>
+                <label class="field-label" for="sceneAI">Адрес AI (1..220)</label>
+                <input id="sceneAI" type="number" min="1" max="220" placeholder="Индивидуальный">
+              </div>
+              <div>
+                <label class="field-label" for="sceneAG">Адрес AG (0..29)</label>
+                <input id="sceneAG" type="number" min="0" max="29" placeholder="Групповой">
+              </div>
+            </div>
+
+            <div class="triple-cards">
+              <section class="inner-card">
+                <div class="inner-head">
+                  <h4>Сценарии</h4>
+                </div>
+                <div class="form-grid form-two">
+                  <div>
+                    <label class="field-label" for="sceneReadNo">Выполнить сценарий (1..20)</label>
+                    <input id="sceneReadNo" type="number" min="1" max="20" value="1">
+                  </div>
+                  <div>
+                    <label class="field-label" for="sceneWriteNo">Сохранить в сценарий (1..20)</label>
+                    <input id="sceneWriteNo" type="number" min="1" max="20" value="1">
+                  </div>
+                </div>
+                <div class="inline compact wrap">
+                  <button id="sceneActivateBtn" class="btn ghost">Выполнить</button>
+                  <button id="sceneSaveBtn" class="btn primary">Сохранить</button>
+                  <button id="sceneStartBtn" class="btn ghost">Установить старт</button>
+                </div>
+              </section>
+
+              <section class="inner-card">
+                <div class="inner-head">
+                  <h4>Спектральный канал</h4>
+                </div>
+                <div class="form-grid form-two">
+                  <div>
+                    <label class="field-label" for="sceneChannel">Канал</label>
+                    <select id="sceneChannel">
+                      <option value="red">Красный</option>
+                      <option value="blue">Синий</option>
+                      <option value="farred">Дальний красный</option>
+                      <option value="white">Белый</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="field-label" for="scenePercent">Мощность % (0..100)</label>
+                    <div class="range-line">
+                      <input id="scenePercent" type="number" min="0" max="100" value="50">
+                      <input id="scenePercentRange" type="range" min="0" max="100" step="1" value="50">
+                      <span id="scenePercentValue" class="range-value">50%</span>
+                    </div>
+                    <div class="quick-row">
+                      <button type="button" class="quick-chip" data-scene-percent="0">0%</button>
+                      <button type="button" class="quick-chip" data-scene-percent="25">25%</button>
+                      <button type="button" class="quick-chip" data-scene-percent="50">50%</button>
+                      <button type="button" class="quick-chip" data-scene-percent="75">75%</button>
+                      <button type="button" class="quick-chip" data-scene-percent="100">100%</button>
+                    </div>
+                  </div>
+                </div>
+                <button id="sceneChannelBtn" class="btn primary full">Применить канал</button>
+              </section>
+
+              <section class="inner-card">
+                <div class="inner-head">
+                  <h4>Назначение AG0..AG2</h4>
+                </div>
+                <div class="form-grid form-two">
+                  <div>
+                    <label class="field-label" for="sceneGroupSlot">Слот</label>
+                    <select id="sceneGroupSlot">
+                      <option value="1">AG0</option>
+                      <option value="2">AG1</option>
+                      <option value="3">AG2</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="field-label" for="sceneGroupNumber">Номер группы (1..29)</label>
+                    <input id="sceneGroupNumber" type="number" min="1" max="29" value="1">
+                  </div>
+                </div>
+                <button id="sceneGroupBtn" class="btn primary full">Назначить группу</button>
+              </section>
+            </div>
+          </article>
+
+          <article class="panel card wide legacy-control-extra">
+            <div class="panel-head">
+              <h3>Назначение групп AG0..AG5 (Unit3)</h3>
+              <button id="grpApplyBtn" class="btn primary">Выполнить</button>
+            </div>
+            <div class="form-grid form-four">
+              <div>
+                <label class="field-label" for="grpAI">Адрес AI (1..220)</label>
+                <input id="grpAI" type="number" min="1" max="220" placeholder="Индивидуальный">
+              </div>
+              <div>
+                <label class="field-label" for="grpAG">Адрес AG (0..29)</label>
+                <input id="grpAG" type="number" min="0" max="29" placeholder="Групповой">
+              </div>
+              <div>
+                <label class="field-label" for="grpSlot">Слот AG (0..5)</label>
+                <input id="grpSlot" type="number" min="0" max="5" value="0">
+              </div>
+              <div>
+                <label class="field-label" for="grpNumber">Номер группы (0..29)</label>
+                <input id="grpNumber" type="number" min="0" max="29" value="1">
+              </div>
+            </div>
+            <label class="switch-line"><input id="grpClear" type="checkbox"><span>Очистить назначение групп (код 230)</span></label>
+          </article>
+        </div>
+      </section>
+
+      <section id="page-schedule" class="page">
+        <div class="cards-grid">
+          <article class="panel card wide schedule-panel">
+            <div class="panel-head">
+              <h3>Планировщик расписания (SHED)</h3>
+              <div class="inline compact wrap">
+                <button id="readScheduleBtn" class="btn ghost">Обновить из контроллера</button>
+                <button id="scheduleWriteBtn" class="btn primary">Применить запись</button>
+              </div>
+            </div>
+
+            <section class="inner-card schedule-section">
+              <div class="form-grid form-four">
+                <div>
+                  <label class="field-label" for="schedIndex">Индекс записи (0..19)</label>
+                  <input id="schedIndex" type="number" min="0" max="19" value="0">
+                </div>
+                <div>
+                  <label class="field-label" for="schedActive">Активность</label>
+                  <label class="switch-line"><input id="schedActive" type="checkbox" checked><span>Запись активна</span></label>
+                </div>
+                <div>
+                  <label class="field-label" for="schedTimeType">Тип времени</label>
+                  <select id="schedTimeType">
+                    <option value="0">Фиксированное время</option>
+                    <option value="1">Смещение от рассвета</option>
+                    <option value="2">Смещение от заката</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label" for="schedTargetMode">Режим цели</label>
+                  <select id="schedTargetMode">
+                    <option value="ai">Команда AI/AG</option>
+                    <option value="keys">Установка KEYS</option>
+                    <option value="diag">Установка DIAG</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-grid form-three">
+                <div>
+                  <label class="field-label" for="schedLevel">Уровень (0..9999)</label>
+                  <input id="schedLevel" type="number" min="0" max="9999" value="0">
+                </div>
+                <div>
+                  <label class="field-label" for="schedAI">Номер светильника AI</label>
+                  <input id="schedAI" type="number" min="1" max="220" placeholder="Индивидуальный">
+                </div>
+                <div>
+                  <label class="field-label" for="schedAG">Номер группы AG</label>
+                  <input id="schedAG" type="number" min="0" max="29" placeholder="Групповой">
+                </div>
+              </div>
+            </section>
+
+            <section class="inner-card schedule-section">
+              <div id="schedTimeFixedWrap">
+                <label class="field-label" for="schedClockInput">Время (ЧЧ:ММ)</label>
+                <input id="schedClockInput" type="time" value="07:30" step="60">
+              </div>
+
+              <div id="schedTimeOffsetWrap">
+                <label class="field-label" for="schedOffsetInput">Смещение (минуты)</label>
+                <div class="range-line">
+                  <input id="schedOffsetInput" type="number" min="-180" max="180" value="0">
+                  <input id="schedOffsetRange" type="range" min="-180" max="180" step="1" value="0">
+                  <span id="schedOffsetValue" class="range-value">0 мин</span>
+                </div>
+              </div>
+
+              <div class="legacy-hidden-controls">
+                <select id="schedSign">
+                  <option value="+">+</option>
+                  <option value="-">-</option>
+                </select>
+                <input id="schedHour" type="number" min="0" max="23" value="7">
+                <input id="schedMin" type="number" min="0" max="59" value="30">
+              </div>
+            </section>
+
+            <section id="schedAiActionSection" class="inner-card schedule-section">
+              <div class="mode-toggle" id="schedActionSwitch">
+                <button type="button" class="mode-chip active" data-sched-action="brightness">Яркость</button>
+                <button type="button" class="mode-chip" data-sched-action="scene">Сценарий</button>
+                <button type="button" class="mode-chip" data-sched-action="command">Код команды</button>
+              </div>
+
+              <div id="schedActionBrightnessBox" class="sched-mode-box active">
+                <label class="field-label" for="schedBrightness">Яркость (0..10)</label>
+                <div class="range-line">
+                  <input id="schedBrightness" type="number" min="0" max="10" value="5">
+                  <input id="schedBrightnessRange" type="range" min="0" max="10" step="1" value="5">
+                  <span id="schedBrightnessValue" class="range-value">5</span>
+                </div>
+              </div>
+
+              <div id="schedActionSceneBox" class="sched-mode-box">
+                <label class="field-label" for="schedScene">Сценарий (1..20)</label>
+                <div class="range-line">
+                  <input id="schedScene" type="number" min="1" max="20" value="1">
+                  <input id="schedSceneRange" type="range" min="1" max="20" step="1" value="1">
+                  <span id="schedSceneValue" class="range-value">1</span>
+                </div>
+              </div>
+
+              <div id="schedActionCommandBox" class="sched-mode-box">
+                <label class="field-label" for="schedCommandCode">Код команды (0..255)</label>
+                <input id="schedCommandCode" type="number" min="0" max="255" value="230">
+                <div class="quick-row">
+                  <button type="button" class="quick-chip" data-sched-command="230">230</button>
+                  <button type="button" class="quick-chip" data-sched-command="240">240</button>
+                  <button type="button" class="quick-chip" data-sched-command="250">250</button>
+                </div>
+              </div>
+            </section>
+
+            <section id="schedKeysSection" class="inner-card schedule-section hidden-control">
+              <label class="field-label">Биты KEYS/DIAG</label>
+              <div class="days-grid">
+                <label><input id="schedKeyA" type="checkbox"><span>A</span></label>
+                <label><input id="schedKeyB" type="checkbox"><span>B</span></label>
+                <label><input id="schedKeyC" type="checkbox"><span>C</span></label>
+              </div>
+            </section>
+
+            <section class="inner-card schedule-section">
+              <div class="panel-head">
+                <h4>Дни недели</h4>
+                <div class="inline compact wrap">
+                  <button id="schedDaysWork" type="button" class="btn ghost">Будни</button>
+                  <button id="schedDaysWeekend" type="button" class="btn ghost">Выходные</button>
+                  <button id="schedDaysAll" type="button" class="btn ghost">Все</button>
+                </div>
+              </div>
+              <div class="schedule-days-grid">
+                <label class="day-pill"><input id="schedD1" type="checkbox" checked><span>Пн</span></label>
+                <label class="day-pill"><input id="schedD2" type="checkbox" checked><span>Вт</span></label>
+                <label class="day-pill"><input id="schedD3" type="checkbox" checked><span>Ср</span></label>
+                <label class="day-pill"><input id="schedD4" type="checkbox" checked><span>Чт</span></label>
+                <label class="day-pill"><input id="schedD5" type="checkbox" checked><span>Пт</span></label>
+                <label class="day-pill"><input id="schedD6" type="checkbox" checked><span>Сб</span></label>
+                <label class="day-pill"><input id="schedD7" type="checkbox" checked><span>Вс</span></label>
+              </div>
+            </section>
+          </article>
+
+          <article class="panel card wide">
+            <div class="panel-head">
+              <h3>Таблица расписания (SHED)</h3>
+              <div class="inline compact">
+                <span id="scheduleCount" class="muted">0 записей</span>
+                <select id="scheduleFilter" aria-label="Фильтр расписания">
+                  <option value="all">Все</option>
+                  <option value="active">Только активные</option>
+                  <option value="inactive">Только неактивные</option>
+                </select>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Активна</th>
+                    <th>Дни</th>
+                    <th>Тип</th>
+                    <th>Время (24h | AM/PM)</th>
+                    <th>Адрес</th>
+                    <th>Команда</th>
+                    <th>Уровень</th>
+                  </tr>
+                </thead>
+                <tbody id="scheduleBody"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="page-protocol" class="page">
+        <div class="cards-grid">
+          <article class="panel card">
+            <div class="panel-head">
+              <h3>Консоль произвольных команд</h3>
+              <button id="sendRawBtn" class="btn accent">Отправить</button>
+            </div>
+            <div class="form-grid">
+              <div>
+                <label class="field-label" for="rawCommand">Команда</label>
+                <input id="rawCommand" list="commandHints" placeholder="TIME">
+                <datalist id="commandHints"></datalist>
+              </div>
+              <div>
+                <label class="field-label" for="rawResponse">Ответ</label>
+                <pre id="rawResponse" class="response-box">Ответа пока нет.</pre>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel card wide">
+            <div class="panel-head">
+              <h3>Журнал протокола</h3>
+              <span class="muted">Поток TX/RX в реальном времени</span>
+            </div>
+            <p id="logMeta" class="muted">Файл лога: не определен</p>
+            <pre id="logView" class="log-box">Трафик пока отсутствует.</pre>
+          </article>
+        </div>
+      </section>
+
+      <section id="page-help" class="page">
+        <div class="cards-grid">
+          <article class="panel card wide">
+            <div class="panel-head">
+              <h3>Справка по командам PLC</h3>
+              <span class="muted">Описание и примеры</span>
+            </div>
+
+            <div class="table-wrap command-help-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Команда</th>
+                    <th>Назначение</th>
+                    <th>Пример</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="cmd-token">TIME</span></td>
+                    <td>Чтение времени контроллера.</td>
+                    <td><span class="cmd-example">TIME</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">TIME ЧЧ:ММ:СС DAY=1..7 DATE=ДД.ММ.ГГ</span></td>
+                    <td>Запись даты и времени в контроллер.</td>
+                    <td><span class="cmd-example">TIME 16:05:49 DAY=3 DATE=25.05.26</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">GEONEZ</span></td>
+                    <td>Чтение широты, долготы и часового пояса.</td>
+                    <td><span class="cmd-example">GEONEZ</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">GEONEZ=LAT,LON,ZONE</span></td>
+                    <td>Запись географических координат.</td>
+                    <td><span class="cmd-example">GEONEZ=055,037,03</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">KEYS</span></td>
+                    <td>Чтение состояния KEYS A/B/C.</td>
+                    <td><span class="cmd-example">KEYS</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">KEYS=ABC</span></td>
+                    <td>Запись состояния KEYS (битовая маска из 0/1).</td>
+                    <td><span class="cmd-example">KEYS=101</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">MASK</span></td>
+                    <td>Чтение маски каналов MASK A/B/C.</td>
+                    <td><span class="cmd-example">MASK</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">MASK=ABC</span></td>
+                    <td>Запись маски каналов (битовая маска из 0/1).</td>
+                    <td><span class="cmd-example">MASK=110</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">COM AAA,CCC</span></td>
+                    <td>Универсальная команда на адрес AAA с кодом CCC.</td>
+                    <td><span class="cmd-example">COM 001,010</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">COMA AAA,CCC</span></td>
+                    <td>Команды сценариев/спектра (legacy протокол).</td>
+                    <td><span class="cmd-example">COMA001,011</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">COMA AAA,010..030</span></td>
+                    <td>Воспроизведение сценария 1..20.</td>
+                    <td><span class="cmd-example">COMA001,015</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">COMA AAA,031..050</span></td>
+                    <td>Запись текущего состояния в сценарий 1..20.</td>
+                    <td><span class="cmd-example">COMA001,031</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">COMA AAA,220</span></td>
+                    <td>Установка стартового сценария при подаче питания.</td>
+                    <td><span class="cmd-example">COMA001,220</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">COMA AAA,140..219</span></td>
+                    <td>Управление спектральными каналами (R/B/FR/W).</td>
+                    <td><span class="cmd-example">COMA001,160</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">SHED</span></td>
+                    <td>Чтение всего расписания контроллера.</td>
+                    <td><span class="cmd-example">SHED</span></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cmd-token">SHED=...</span></td>
+                    <td>Запись одной строки расписания.</td>
+                    <td><span class="cmd-example">SHED=09 1 1111111 2-00:10 250 007 0000</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel card">
+            <div class="panel-head">
+              <h3>Нотация параметров</h3>
+            </div>
+            <ul class="help-list">
+              <li><strong>AAA</strong> - адрес устройства 000..255.</li>
+              <li><strong>AI</strong> - индивидуальный адрес 1..220.</li>
+              <li><strong>AG</strong> - групповой адрес 0..29, где AG=0 это широковещательная группа.</li>
+              <li><strong>Важно для записи сцен:</strong> используйте AI или AG=1..29. AG=0 (broadcast) может дать непредсказуемую запись спектра.</li>
+              <li><strong>CCC</strong> - код команды 000..255.</li>
+              <li><strong>ABC</strong> - трехбитная маска каналов A/B/C.</li>
+            </ul>
+          </article>
+
+          <article class="panel card wide">
+            <div class="panel-head">
+              <h3>Расшифровка COMA по числам</h3>
+            </div>
+            <ul class="help-list">
+              <li><strong>Воспроизведение сцены:</strong> <strong>CCC = 10 + N</strong>, где N = 1..20. Пример: <strong>015</strong> = сцена 5.</li>
+              <li><strong>Запись сцены:</strong> <strong>CCC = 30 + N</strong>, где N = 1..20. Пример: <strong>035</strong> = записать в сцену 5.</li>
+              <li><strong>Каналы спектра (BASE):</strong> 140 = красный, 160 = синий, 180 = дальний красный, 200 = белый.</li>
+              <li><strong>Код канала:</strong> <strong>CCC = BASE + S</strong>, где S = шаг мощности 0..19.</li>
+              <li><strong>Преобразование процента в шаг S:</strong> 0% -> 0; 1..10% -> 1; 11..100% -> floor(%/5)-1.</li>
+              <li><strong>Пример 161:</strong> 160 (синий BASE) + 1 (шаг) -> синий 10%.</li>
+              <li><strong>Пример 143:</strong> 140 (красный BASE) + 3 (шаг) -> красный 20%.</li>
+              <li><strong>Пример 209:</strong> 200 (белый BASE) + 9 (шаг) -> белый 50%.</li>
+              <li><strong>Пример 180:</strong> 180 (дальний красный BASE) + 0 (шаг) -> дальний красный 0%.</li>
+            </ul>
+          </article>
+
+          <article class="panel card">
+            <div class="panel-head">
+              <h3>Быстрые примеры</h3>
+            </div>
+            <pre class="response-box help-examples">Чтение времени:
+TIME
+
+Запись времени:
+TIME 08:30:00 DAY=1 DATE=20.04.26
+
+Сохранить полный спектр (R/B/W/FR) в сценарий 5:
+COMA001,143
+COMA001,165
+COMA001,209
+COMA001,180
+COMA001,035
+
+Запустить сценарий 5:
+COMA001,015
+
+Записать строку расписания:
+SHED=00 1 1111111 0+08:00 001 011 0000</pre>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toastStack" class="toast-stack"></div>
+
+  <script type="module" src="app.js?v=20260420-10"></script>
+</body>
+</html>
