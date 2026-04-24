@@ -997,6 +997,7 @@ async function unloadModel() {
 
 function showModelStatus(message, isError = false) {
   const modelStatus = document.getElementById("modelStatus");
+  console.log("[showModelStatus] called with:", message, "element found:", !!modelStatus);
   if (modelStatus) {
     modelStatus.textContent = message;
     modelStatus.classList.add("visible");
@@ -1112,12 +1113,23 @@ async function sendAgentCommand(command) {
     input.value = "";
   }
   
+  // Получаем текущие настройки reasoning
+  const enableReasoning = document.getElementById("enableReasoning");
+  const reasoningLevel = document.getElementById("reasoningLevel");
+  let reasoning = null;
+  if (enableReasoning && enableReasoning.checked && reasoningLevel && reasoningLevel.value) {
+    reasoning = reasoningLevel.value;
+  }
+  
   // Показываем индикатор набора
   showTypingIndicator();
   
   try {
-    // Отправляем команду на backend - там проверится тестовый режим
-    const result = await callApi("api_agent_execute", command);
+    // Отправляем команду на backend
+    const result = await callApi("api_agent_execute", {
+      command: command,
+      reasoning: reasoning
+    });
     
     // Удаляем индикатор
     removeTypingIndicator();

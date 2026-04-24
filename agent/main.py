@@ -228,11 +228,11 @@ class PLCAgent:
                 data = response.json()
                 self._model_config["model_key"] = model_key
                 self._model_config["use_lm_studio"] = True
-                # Сохраняем instance_id из ответа
-                instance_id = data.get("instance_id")
-                if instance_id:
-                    self._model_config["instance_id"] = instance_id
-                    self._current_model_key = actual_key
+                # instance_id - это ключ модели (например "gemma-3-270m-it-qat")
+                self._model_config["instance_id"] = actual_key
+                self._current_model_key = actual_key
+                LOGGER.info("Model load response: %s", data)
+                LOGGER.info("Model loaded with instance_id: %s", actual_key)
                 # Сохраняем параметры конфигурации
                 if config.get("reasoning") is not None:
                     self._model_config["reasoning"] = config["reasoning"]
@@ -242,8 +242,9 @@ class PLCAgent:
                     self._model_config["max_tokens"] = config["max_tokens"]
                 if config.get("context_size") is not None:
                     self._model_config["context_size"] = config["context_size"]
-                LOGGER.info("Model loaded: %s", instance_id)
                 return True
+            else:
+                LOGGER.error("Load failed with status: %s, response: %s", response.status_code, response.text)
             return False
         except Exception as exc:
             LOGGER.error("Load error: %s", exc)
@@ -251,18 +252,27 @@ class PLCAgent:
 
     def unload_model(self) -> None:
         instance_id = self._model_config.get("instance_id")
+        LOGGER.info(">>> [UNLOAD] Attempting to unload model with instance_id: %s", instance_id)
+        LOGGER.info(">>> [UNLOAD] LM Studio available: %s", self._lm_studio_available)
         if instance_id and self._lm_studio_available:
             try:
                 import requests
                 base_url = LM_STUDIO_API_CONFIG["base_url"]
-                requests.post(f"{base_url}/api/v1/models/unload", json={"instance_id": instance_id}, headers={"Content-Type": "application/json"}, timeout=30)
+                unload_payload = {"instance_id": instance_id}
+                LOGGER.info(">>> [UNLOAD] Sending request to %s/api/v1/models/unload", base_url)
+                LOGGER.info(">>> [UNLOAD] Payload: %s", unload_payload)
+                response = requests.post(f"{base_url}/api/v1/models/unload", json=unload_payload, headers={"Content-Type": "application/json"}, timeout=30)
+                LOGGER.info(">>> [UNLOAD] Response status: %s", response.status_code)
+                LOGGER.info(">>> [UNLOAD] Response body: %s", response.text)
             except Exception as exc:
                 LOGGER.error("Unload error: %s", exc)
+        else:
+            LOGGER.warning(">>> [UNLOAD] Skipped - no instance_id or LM Studio not available")
         self._model_config["model_key"] = None
         self._model_config["use_lm_studio"] = False
         self._model_config["instance_id"] = None
         self._current_model_key = None
-        LOGGER.info("Model unloaded")
+        LOGGER.info("Model unloaded from agent config")
 
     def check_speech(self) -> bool:
         print("[AGENT] check_speech() checking...")
@@ -478,12 +488,12 @@ class PLCAgent:
             LOGGER.error(">>> [RAW] Command execution failed: %s", exc)
             return {"success": False, "error": str(exc), "command": command}
 
-    def generate_response(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+    def generate_response(self, prompt: str, system_prompt: Optional[str] = None, reasoning: Optional[str] = None) -> str:
         if self._model_config.get("use_lm_studio") and self._lm_studio_available:
-            return self._generate_lm_studio(prompt, system_prompt)
+            return self._generate_lm_studio(prompt, system_prompt, reasoning)
         return "LM Studio недоступен."
 
-    def _generate_lm_studio(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+    def _generate_lm_studio(self, prompt: str, system_prompt: Optional[str] = None, reasoning: Optional[str] = None) -> str:
         try:
             import requests
             base_url = LM_STUDIO_API_CONFIG["base_url"]
@@ -505,13 +515,14 @@ class PLCAgent:
                 "max_output_tokens": self._model_config.get("max_tokens", 512),
             }
             # Отправлять reasoning если он явно задан (включая "off")
-            reasoning = self._model_config.get("reasoning")
-            print(f"DEBUG: reasoning from config = {reasoning}")
-            if reasoning is not None and reasoning != "":
-                payload["reasoning"] = reasoning
-                print(f"DEBUG: Sending reasoning={reasoning}")
+            # Приоритет: переданный параметр > сохраненный в конфиге
+            effective_reasoning = reasoning if reasoning is not None else self._model_config.get("reasoning")
+            print(f"DEBUG: effective reasoning = {effective_reasoning}")
+            if effective_reasoning is not None and effective_reasoning != "":
+                payload["reasoning"] = effective_reasoning
+                print(f"DEBUG: Sending reasoning={effective_reasoning}")
             else:
-                print(f"DEBUG: Not sending reasoning (value: {reasoning})")
+                print(f"DEBUG: Not sending reasoning (value: {effective_reasoning})")
             if tools:
                 payload["tools"] = tools
             if system_prompt:

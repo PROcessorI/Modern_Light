@@ -1427,10 +1427,10 @@ def api_agent_status() -> dict[str, object]:
 
 
 @_api_guard
-def api_agent_execute(command: str) -> dict[str, object]:
+def api_agent_execute(command: str, reasoning: str = None) -> dict[str, object]:
     """Выполняет команду пользователя через AI-агента."""
     APP_LOGGER.info("=== api_agent_execute() called ===")
-    APP_LOGGER.info("Command: %s", command)
+    APP_LOGGER.info("Command: %s, reasoning: %s", command, reasoning)
     
     agent = _get_agent()
     
@@ -1447,7 +1447,7 @@ def api_agent_execute(command: str) -> dict[str, object]:
 Например если пользователь спрашивает: Как настроить расписание? выводи команду для чтения и установки расписания с описанием параметров и так для всех команд.
 ВАЖНО: ВСЕГДА ОТВЕТЧАЙ НА РУССКОМ ЯЗЫКЕ. ОТВЕЧАЙ НА ДРУГИХ ЯЗЫКАХ ТОЛЬКО ЕСЛИ ПОЛЬЗОВАТЕЛЬ ЯВНО ОБРАТИТСЯ К ТЕБЕ НА ЭТОМ ЯЗЫКЕ. НЕ ПЕРЕХОДИ НА АНГЛИЙСКИЙ, ЕСЛИ НЕ ПРОСЯТ. ТАКЖЕ ВСЕГДА ДЕЛАЙ КРАСИВЫЙ И ПОНЯТНЫЙ ВЫВОД!
 ВАЖНО: НИКОГДА НЕ ВЫВОДИ ЧТО-ТО ТИПА: Приветствие/разговор: Пользователь прислал приветствие и команду. Нужно выполнить команду. ИЛИ Ответ должен быть только в формате статуса и команды. НЕ ПИШИ И НЕ ВЫВОДИ СВОИ РАЗМЫШЛЕНИЯ!
-САМОЕ ВАЖНОЕ: НЕ ВЫПОЛНЯЙ НИКАИХ КОМАНД ЕСЛИ ТЕБЯ НЕ ПРОСЯТ! НАПРИМЕР "Привет" ЭТО НЕ КОМАНДА!
+САМОЕ ВАЖНОЕ: НЕ ВЫПОЛНЯЙ НИКАИХ КОМАНД ЕСЛИ ТЕБЯ ЯВНО ОБ ЭТОМ НЕ ПРОСЯТ! НАПРИМЕР "Привет" ЭТО НЕ КОМАНДА!
 Пример: Привет! Выполни сценарий 1.
 
 Твой ответ должен быть: Привет! Выполняю команду! Стататус: ВЫПОЛНЕНО: COMA000,011
@@ -1519,7 +1519,7 @@ def api_agent_execute(command: str) -> dict[str, object]:
             return {"success": True, "text": "COM-порты не обнаружены. Проверьте подключение USB-адаптера.", "action_result": {"ports": []}}
     
     if status.get("lm_studio_available") and status.get("current_model"):
-        response_text = agent.generate_response(command, system_prompt)
+        response_text = agent.generate_response(command, system_prompt, reasoning)
         APP_LOGGER.info("Model full response: '%s'", response_text)
         
         # Парсим ответ - ищем PLC команду(ы) в тексте
