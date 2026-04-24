@@ -4,3 +4,10 @@ venv
 *.pyc
 *.log
 .agents
+models
+logs
+skills-lock.json
+output
+.continue
+config.ini
+*.exe

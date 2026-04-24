@@ -1,0 +1,19 @@
+{
+  "model": {
+    "file": null,
+    "context_size": 4096,
+    "max_tokens": 2048,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "repeat_penalty": 1.1,
+    "n_threads": null
+  },
+  "speech": {
+    "sample_rate": 16000
+  },
+  "agent": {
+    "system_prompt": "Вы - помощник для управления PLC-контроллерами освещения. Отвечайте кратко и по делу. Для команд типа 'выполни сценарий 1' сразу отвечай командой без объяснений.",
+    "chat_history_limit": 20,
+    "auto_execute": true
+  }
+}

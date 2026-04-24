@@ -75,9 +75,9 @@
             <button class="page-tab" data-page="page-control">Управление</button>
             <button class="page-tab" data-page="page-schedule">Расписание</button>
             <button class="page-tab" data-page="page-protocol">Протокол</button>
+            <button class="page-tab" data-page="page-ai" id="aiTabBtn">ИИ</button>
             <button class="page-tab" data-page="page-help">Справка</button>
           </div>
-          <button id="refreshLogsBtn" class="btn ghost">Обновить лог</button>
         </div>
       </header>
 
@@ -862,10 +862,204 @@ SHED=00 1 1111111 0+08:00 001 011 0000</pre>
           </article>
         </div>
       </section>
+
+      <!-- AI Agent Page -->
+      <section id="page-ai" class="page">
+        <div class="cards-grid">
+          <article class="panel card wide">
+            <div class="panel-head">
+              <h3>AI-агент управления PLC</h3>
+              <span class="muted">Полноценный чат с голосовым вводом</span>
+            </div>
+
+            <!-- Статус агента -->
+            <div class="agent-status" id="agentStatus">
+              <div class="status-item">
+                <span class="status-label">Модели:</span>
+                <span id="aiModelsStatus" class="status-value">Проверка...</span>
+              </div>
+              <div class="status-item">
+                <span class="status-label">Голос:</span>
+                <span id="aiVoskStatus" class="status-value">Проверка...</span>
+              </div>
+              <div class="status-item">
+                <span class="status-label">Инструменты:</span>
+                <span id="aiToolsStatus" class="status-value">-</span>
+              </div>
+              <div class="status-item">
+                <span class="status-label">Скиллы:</span>
+                <span id="aiSkillsStatus" class="status-value">-</span>
+              </div>
+            </div>
+
+            <!-- Чат с агентом -->
+            <div class="agent-chat">
+              <div id="agentChatLog" class="chat-log">
+                <div class="chat-message system">
+                  <div class="message-header">Система</div>
+                  <div class="message-body">
+                    AI-агент готов к работе!
+                    <br><br>
+                    <strong>Возможности:</strong>
+                    <br>- Общение на естественном языке
+                    <br>- Голосовой ввод (SpeechRecognition, Google API)
+                    <br>- Управление светильниками
+                    <br>- Запись и активация сцен
+                    <br><br>
+                    <strong>Примеры:</strong>
+                    <br>- "Включи свет на 50%"
+                    <br>- "Запусти сцену 5"
+                    <br>- "Красный канал 80%, синий 30%"
+                    <br>- "Как настроить расписание?"
+                  </div>
+                </div>
+              </div>
+
+              <!-- Голосовой ввод -->
+              <div class="voice-controls">
+                <button id="voiceToggleBtn" class="voice-btn" title="Включить микрофон">
+                  <span class="voice-label">Микрофон выкл</span>
+                </button>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="alwaysOnMic">
+                  <span>Постоянно включен</span>
+                </label>
+                <div id="voiceStatus" class="voice-status">Ожидание...</div>
+              </div>
+
+              <div class="chat-input-area">
+                <textarea 
+                  id="agentInput" 
+                  class="chat-input" 
+                  placeholder="Введите команду или используйте голосовой ввод..."
+                  rows="3"
+                ></textarea>
+                <div class="chat-actions">
+                  <button id="agentSendBtn" class="btn primary">Отправить</button>
+                  <button id="agentClearBtn" class="btn ghost">Очистить</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Быстрые команды -->
+            <div class="quick-commands">
+              <h4>Быстрые команды</h4>
+              <div class="command-chips">
+                <button class="quick-chip" data-command="Включи свет">Включить</button>
+                <button class="quick-chip" data-command="Выключи свет">Выключить</button>
+                <button class="quick-chip" data-command="Яркость 5">50%</button>
+                <button class="quick-chip" data-command="Яркость 10">100%</button>
+                <button class="quick-chip" data-command="Запусти сцену 1">Сцена 1</button>
+                <button class="quick-chip" data-command="Запусти сцену 2">Сцена 2</button>
+                <button class="quick-chip" data-command="Запусти сцену 3">Сцена 3</button>
+                <button class="quick-chip" data-command="Прочитай время">Время</button>
+                <button class="quick-chip" data-command="Прочитай KEYS">KEYS</button>
+              </div>
+            </div>
+          </article>
+
+          <!-- Настройки модели -->
+          <article class="panel card">
+            <div class="panel-head">
+              <h4>Настройки LLM</h4>
+            </div>
+            
+            <div class="settings-group">
+              <label for="modelSelect">Модель:</label>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <select id="modelSelect" class="form-select" style="flex: 1;">
+                  <option value="">-- Не выбрано --</option>
+                </select>
+                <button id="refreshModelsBtn" class="btn ghost btn-sm" title="Обновить список моделей" style="padding: 6px 10px;">🔄</button>
+              </div>
+            </div>
+            
+            <div class="settings-group">
+              <label for="contextSize">Контекст:</label>
+              <input type="number" id="contextSize" class="form-input" value="4096" min="512" max="30000" step="512">
+            </div>
+            
+            <div class="settings-group">
+              <label for="maxTokens">Макс. токенов:</label>
+              <input type="number" id="maxTokens" class="form-input" value="4096" min="64" max="30000" step="64">
+            </div>
+            
+            <div class="settings-group">
+              <label for="temperature">Температура:</label>
+              <input type="range" id="temperature" class="form-range" min="0.1" max="2.0" step="0.1" value="0.7">
+              <span id="temperatureValue">0.7</span>
+            </div>
+            
+            <div class="settings-actions">
+              <button id="loadModelBtn" class="btn primary btn-sm">Загрузить</button>
+              <button id="unloadModelBtn" class="btn ghost btn-sm">Выгрузить</button>
+              <label style="margin-left: 12px; display: inline-flex; align-items: center; gap: 4px; font-size: 12px;">
+                <input type="checkbox" id="enableReasoning" style="width:14px;height:14px;">
+                <span>Reasoning</span>
+              </label>
+              <select id="reasoningLevel" style="width:100px;margin-left:4px;font-size:12px;">
+                <option value="off">off</option>
+                <option value="low">low</option>
+                <option value="medium" selected>medium</option>
+                <option value="high">high</option>
+              </select>
+            </div>
+            
+            <!-- Тестовый режим -->
+            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line);">
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--primary); cursor: pointer;">
+                <input type="checkbox" id="testModeToggle" style="width:16px;height:16px;">
+                <span>🧪 Тестовый режим (без отправки команд)</span>
+              </label>
+              <div id="testModeInfo" style="font-size: 11px; color: var(--muted); margin-top: 6px; display: none;">
+                В этом режиме команды не отправляются на устройство. Все действия выполняются в симуляции.
+              </div>
+            </div>
+            
+            <div id="modelStatus" class="model-status"></div>
+          </article>
+
+          <!-- Лог выполнения -->
+          <article class="panel card">
+            <div class="panel-head">
+              <h4>Последняя команда</h4>
+            </div>
+            <pre id="agentLastCommand" class="response-box">Ожидание команды...</pre>
+          </article>
+        </div>
+      </section>
     </main>
   </div>
 
   <div id="toastStack" class="toast-stack"></div>
+
+  <script type="module">
+    // Проверяем доступность AI-агента при загрузке
+    async function checkAIAvailability() {
+      try {
+        // Пробуем вызвать API агента
+        if (typeof eel !== 'undefined' && eel.api_agent_status) {
+          const status = await eel.api_agent_status()();
+          if (status.ok && (status.data.models_available || status.data.vosk_available)) {
+            // Показываем вкладку ИИ
+            const aiTabBtn = document.getElementById('aiTabBtn');
+            if (aiTabBtn) {
+              aiTabBtn.style.display = 'block';
+            }
+          }
+        }
+      } catch (error) {
+        console.log('AI agent not available:', error);
+      }
+    }
+    
+    // Запускаем проверку после загрузки страницы
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', checkAIAvailability);
+    } else {
+      checkAIAvailability();
+    }
+  </script>
 
   <script type="module" src="app.js?v=20260420-10"></script>
 </body>

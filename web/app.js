@@ -173,7 +173,6 @@ const ui = {
 
   logView: document.getElementById("logView"),
   logMeta: document.getElementById("logMeta"),
-  refreshLogsBtn: document.getElementById("refreshLogsBtn"),
   portHints: document.getElementById("portHints"),
   portQuickList: document.getElementById("portQuickList"),
 
@@ -1736,7 +1735,11 @@ function renderLogs(items) {
   ui.logView.textContent = data
     .map((item) => `${item.ts}  ${String(item.dir).toUpperCase().padEnd(3, " ")}  ${item.text}`)
     .join("\n");
-  ui.logView.scrollTop = ui.logView.scrollHeight;
+  // Авто-листаем вниз только если пользователь уже внизу или близко к краю
+  const isNearBottom = ui.logView.scrollHeight - ui.logView.scrollTop - ui.logView.clientHeight < 50;
+  if (isNearBottom) {
+    ui.logView.scrollTop = ui.logView.scrollHeight;
+  }
 }
 
 function setRawResponse(lines) {
@@ -2369,10 +2372,6 @@ function wireEvents() {
     });
   });
 
-  ui.refreshLogsBtn.addEventListener("click", () => {
-    refreshLogs(false);
-  });
-
   ui.scheduleFilter.addEventListener("change", () => {
     renderSchedule(scheduleState.entries);
   });
@@ -2387,6 +2386,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   wireEvents();
   await bootstrap();
 
+  // Инициализация AI-агента
+  initAIAgent();
+
   setInterval(() => {
     refreshLogs(true);
   }, 1800);
@@ -2395,3 +2397,650 @@ window.addEventListener("DOMContentLoaded", async () => {
 window.addEventListener("beforeunload", () => {
   stopScenarioRepeat("Повтор выключен");
 });
+
+// === AI Agent Functions ===
+
+const aiAgentState = {
+  initialized: false,
+  modelsAvailable: false,
+  speechAvailable: false,
+  lmStudioAvailable: false,
+  micEnabled: false,
+  alwaysOnMic: false,
+  testMode: false,
+  modelFiles: [],
+  mediaRecorder: null,
+  audioChunks: [],
+};
+
+async function initAIAgent() {
+  try {
+    const status = await callApi("api_agent_status");
+    aiAgentState.initialized = true;
+    aiAgentState.modelsAvailable = status.models_available || false;
+    aiAgentState.speechAvailable = status.speech_available || false;
+    aiAgentState.lmStudioAvailable = status.lm_studio_available || false;
+    aiAgentState.testMode = status.test_mode || false;
+    aiAgentState.tools = status.tools || [];
+    aiAgentState.skills = status.skills || [];
+    aiAgentState.modelFiles = status.model_files || [];
+    aiAgentState.currentModel = status.current_model || null;  // Сохраняем загруженную модель
+    
+    // DEBUG: показываем что пришло с сервера
+    console.log('=== AI Agent Status ===');
+    console.log('status.current_model:', status.current_model);
+    console.log('status.model_files:', status.model_files);
+    console.log('status.lm_studio_available:', status.lm_studio_available);
+    
+    // Показываем вкладку ИИ если есть модели или LM Studio или SpeechRecognition
+    const aiTabBtn = document.getElementById('aiTabBtn');
+    if (aiTabBtn && (aiAgentState.modelsAvailable || aiAgentState.lmStudioAvailable || aiAgentState.speechAvailable)) {
+      aiTabBtn.style.display = 'block';
+    }
+    
+    // Обновляем статус
+    updateAIAgentStatus();
+    
+    // Заполняем список моделей
+    populateModelList(aiAgentState.modelFiles);
+    
+    // Инициализируем обработчики
+    initAIAgentHandlers();
+    
+  } catch (error) {
+    console.error("Failed to initialize AI agent:", error);
+  }
+}
+
+function updateAIAgentStatus() {
+  const modelsStatus = document.getElementById("aiModelsStatus");
+  const voskStatus = document.getElementById("aiVoskStatus");
+  const toolsStatus = document.getElementById("aiToolsStatus");
+  const skillsStatus = document.getElementById("aiSkillsStatus");
+  
+  if (modelsStatus) {
+    modelsStatus.textContent = aiAgentState.modelsAvailable ? "Доступны" : "Не найдены";
+    modelsStatus.className = aiAgentState.modelsAvailable ? "status-ok" : "status-error";
+  }
+  
+  if (voskStatus) {
+    // SpeechRecognition
+    voskStatus.textContent = aiAgentState.speechAvailable ? "Готов (Google)" : "Не установлен";
+    voskStatus.className = aiAgentState.speechAvailable ? "status-ok" : "status-error";
+    // Добавляем подсказку
+    if (aiAgentState.speechAvailable) {
+      voskStatus.title = "SpeechRecognition (Google API) - требуется интернет";
+    } else {
+      voskStatus.title = "Требуется: pip install SpeechRecognition и микрофон";
+    }
+  }
+  
+  if (toolsStatus) {
+    toolsStatus.textContent = aiAgentState.tools.length > 0 ? aiAgentState.tools.join(", ") : "Нет";
+  }
+  
+  if (skillsStatus) {
+    skillsStatus.textContent = aiAgentState.skills.length > 0 ? aiAgentState.skills.join(", ") : "Нет";
+  }
+}
+
+function populateModelList(modelFiles) {
+  const select = document.getElementById("modelSelect");
+  if (!select) return;
+  
+  select.innerHTML = '<option value="">-- Не выбрано --</option>';
+  
+  if (modelFiles && modelFiles.length > 0) {
+    modelFiles.forEach(file => {
+      const option = document.createElement("option");
+      option.value = file;
+      
+      // Форматируем название для отображения
+      if (file.startsWith("LM Studio:")) {
+        // LM Studio модель: "LM Studio: Gemma 3 270m Instruct Qat (gemma-3-270m-it-qat)"
+        const displayName = file.replace("LM Studio: ", "");
+        option.textContent = displayName;
+      } else {
+        // Локальная GGUF модель
+        option.textContent = file.replace('.gguf', '');
+      }
+      
+      select.appendChild(option);
+    });
+    
+    // Если есть загруженная модель - выбираем её автоматически
+    console.log('[AI] currentModel:', aiAgentState.currentModel);
+    console.log('[AI] modelFiles:', modelFiles);
+    
+    // Ищем загруженную модель (с [ЗАГРУЖЕНА]) - приоритет
+    let selected = false;
+    for (const opt of select.options) {
+      if (opt.value.includes('[ЗАГРУЖЕНА]')) {
+        select.value = opt.value;
+        console.log('[AI] Selected [ЗАГРУЖЕНА]:', opt.value);
+        selected = true;
+        break;
+      }
+    }
+    
+    // Если не нашли [ЗАГРУЖЕНА], ищем по ключу
+    if (!selected && aiAgentState.currentModel) {
+      const modelKey = aiAgentState.currentModel;
+      for (const opt of select.options) {
+        if (opt.value.includes(modelKey) || modelKey.includes(opt.value.split('(')[1]?.replace(')', ''))) {
+          select.value = opt.value;
+          console.log('[AI] Selected by key:', opt.value);
+          break;
+        }
+      }
+    }
+    
+    // Если ничего не нашли и модель только одна - выбираем её
+    if (!selected && modelFiles.length === 1) {
+      select.value = modelFiles[0];
+      console.log('[AI] Selected single:', modelFiles[0]);
+    }
+  }
+}
+
+function initAIAgentHandlers() {
+  // Кнопка микрофона
+  const voiceToggleBtn = document.getElementById("voiceToggleBtn");
+  const alwaysOnMicCheckbox = document.getElementById("alwaysOnMic");
+  const voiceStatus = document.getElementById("voiceStatus");
+  
+  if (voiceToggleBtn) {
+    voiceToggleBtn.addEventListener("click", toggleMicrophone);
+  }
+  
+  if (alwaysOnMicCheckbox) {
+    alwaysOnMicCheckbox.addEventListener("change", (e) => {
+      aiAgentState.alwaysOnMic = e.target.checked;
+      if (e.target.checked && !aiAgentState.micEnabled) {
+        toggleMicrophone();
+      }
+    });
+  }
+  
+  // Кнопки загрузки модели
+  const loadModelBtn = document.getElementById("loadModelBtn");
+  const unloadModelBtn = document.getElementById("unloadModelBtn");
+  const refreshModelsBtn = document.getElementById("refreshModelsBtn");
+  const temperatureSlider = document.getElementById("temperature");
+  const temperatureValue = document.getElementById("temperatureValue");
+  
+  if (loadModelBtn) {
+    loadModelBtn.addEventListener("click", loadAIModel);
+  }
+  
+  if (unloadModelBtn) {
+    unloadModelBtn.addEventListener("click", unloadAIModel);
+  }
+  
+  if (refreshModelsBtn) {
+    refreshModelsBtn.addEventListener("click", async () => {
+      try {
+        refreshModelsBtn.disabled = true;
+        refreshModelsBtn.textContent = "⏳";
+        const result = await callApi("api_agent_refresh_models");
+        if (result.success) {
+          // Обновляем список моделей
+          populateModelList(result.models || []);
+          showModelStatus("Список моделей обновлён");
+        } else {
+          showModelStatus("Ошибка обновления: " + (result.error || ""), true);
+        }
+      } catch (error) {
+        showModelStatus("Ошибка: " + error.message, true);
+      } finally {
+        refreshModelsBtn.disabled = false;
+        refreshModelsBtn.textContent = "🔄";
+      }
+    });
+  }
+  
+  if (temperatureSlider && temperatureValue) {
+    temperatureSlider.addEventListener("input", (e) => {
+      temperatureValue.textContent = e.target.value;
+    });
+  }
+  
+  // Тестовый режим
+  const testModeToggle = document.getElementById("testModeToggle");
+  
+  if (testModeToggle) {
+    testModeToggle.addEventListener("change", async (e) => {
+      aiAgentState.testMode = e.target.checked;
+      console.log("Test mode:", aiAgentState.testMode ? "ENABLED" : "DISABLED");
+      
+      // Отправляем на backend
+      try {
+        await callApi("api_agent_set_test_mode", aiAgentState.testMode);
+        console.log("Test mode sent to backend:", aiAgentState.testMode);
+      } catch (error) {
+        console.error("Failed to set test mode on backend:", error);
+      }
+      
+      if (aiAgentState.testMode) {
+        const input = document.getElementById("agentInput");
+        if (input) {
+          input.placeholder = "⚠️ ТЕСТОВЫЙ РЕЖИМ: Команды не будут отправлены на устройство!";
+        }
+        
+        addAIChatMessage(
+          "🧪 <strong>Тестовый режим ВКЛЮЧЕН</strong><br>" +
+          "Команды не будут отправлены на устройство. Все действия выполняются в симуляции.",
+          "system"
+        );
+        
+        showToast("🧪 Тестовый режим включен. Команды не отправляются.", "warning");
+      } else {
+        const input = document.getElementById("agentInput");
+        if (input) {
+          input.placeholder = "Введите команду или используйте голосовой ввод...";
+        }
+        
+        addAIChatMessage(
+          "ℹ️ <strong>Тестовый режим ВЫКЛЮЧЕН</strong><br>" +
+          "Команды будут отправлены на устройство в обычном режиме.",
+          "system"
+        );
+        
+        showToast("Тестовый режим выключен.", "info");
+      }
+    });
+  }
+  
+  // Кнопки чата
+  const sendBtn = document.getElementById("agentSendBtn");
+  const clearBtn = document.getElementById("agentClearBtn");
+  const input = document.getElementById("agentInput");
+  
+  if (sendBtn) {
+    sendBtn.addEventListener("click", () => sendAICommand(input.value));
+  }
+  
+  if (clearBtn) {
+    clearBtn.addEventListener("click", clearAIChat);
+  }
+  
+  if (input) {
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendAICommand(input.value);
+      }
+    });
+  }
+  
+  // Быстрые команды
+  document.querySelectorAll(".quick-chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      const command = chip.dataset.command;
+      if (command) {
+        sendAICommand(command);
+      }
+    });
+  });
+}
+
+async function toggleMicrophone() {
+  const voiceToggleBtn = document.getElementById("voiceToggleBtn");
+  const voiceStatus = document.getElementById("voiceStatus");
+  const voiceLabel = voiceToggleBtn.querySelector(".voice-label");
+  
+  if (!voiceLabel) return;
+  
+  if (aiAgentState.micEnabled) {
+    stopMicrophone();
+    voiceToggleBtn.classList.remove("active");
+    voiceLabel.textContent = "Микрофон выкл";
+    voiceStatus.textContent = "Микрофон выключен";
+  } else {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true
+        } 
+      });
+      
+      aiAgentState.micEnabled = true;
+      voiceToggleBtn.classList.add("active");
+      voiceLabel.textContent = "Микрофон вкл";
+      voiceStatus.textContent = "Слушаю...";
+      
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus',
+        audioBitsPerSecond: 16000
+      });
+      
+      aiAgentState.mediaRecorder = mediaRecorder;
+      aiAgentState.audioChunks = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        aiAgentState.audioChunks.push(event.data);
+      };
+      
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(aiAgentState.audioChunks, { type: 'audio/webm' });
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const base64Audio = arrayBufferToBase64(arrayBuffer);
+        
+        try {
+          const result = await callApi("api_voice_recognize", base64Audio, 16000);
+          
+          if (result.success && result.transcript) {
+            const input = document.getElementById("agentInput");
+            if (input) {
+              input.value = result.transcript;
+            }
+            voiceStatus.textContent = "Распознано: " + result.transcript;
+            
+            if (!aiAgentState.alwaysOnMic) {
+              stopMicrophone();
+              voiceToggleBtn.classList.remove("active");
+              voiceLabel.textContent = "Микрофон выкл";
+            }
+          } else {
+            voiceStatus.textContent = "Не распознано";
+          }
+        } catch (error) {
+          console.error("Recognition error:", error);
+          voiceStatus.textContent = "Ошибка распознавания";
+        }
+      };
+      
+      mediaRecorder.start(1000);
+      
+    } catch (error) {
+      console.error("Microphone error:", error);
+      voiceStatus.textContent = "Ошибка: " + error.message;
+      voiceToggleBtn.classList.remove("active");
+      voiceLabel.textContent = "Микрофон выкл";
+      aiAgentState.micEnabled = false;
+    }
+  }
+}
+
+function stopMicrophone() {
+  if (aiAgentState.mediaRecorder && aiAgentState.mediaRecorder.state !== 'inactive') {
+    aiAgentState.mediaRecorder.stop();
+  }
+  
+  if (aiAgentState.mediaRecorder) {
+    aiAgentState.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+  }
+  
+  aiAgentState.micEnabled = false;
+  aiAgentState.mediaRecorder = null;
+}
+
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
+}
+
+async function loadAIModel() {
+  const modelSelect = document.getElementById("modelSelect");
+  const contextSize = document.getElementById("contextSize");
+  const maxTokens = document.getElementById("maxTokens");
+  const temperature = document.getElementById("temperature");
+  const enableReasoning = document.getElementById("enableReasoning");
+  const reasoningLevel = document.getElementById("reasoningLevel");
+  const modelStatus = document.getElementById("modelStatus");
+  
+  const modelName = modelSelect.value;
+  if (!modelName) {
+    showModelStatus("Выберите модель", true);
+    return;
+  }
+  
+  showModelStatus("Загрузка модели...");
+  
+  const config = {
+    context_size: parseInt(contextSize.value) || 4096,
+    max_tokens: parseInt(maxTokens.value) || 512,
+    temperature: parseFloat(temperature.value) || 0.7
+  };
+  
+  // Отправляем reasoning только если чекбокс включен и есть значение
+  if (enableReasoning && enableReasoning.checked) {
+    if (reasoningLevel && reasoningLevel.value) {
+      config.reasoning = reasoningLevel.value;
+    }
+  }
+  
+  try {
+    const result = await callApi("api_agent_load_model", modelName, config);
+    
+    if (result.success) {
+      showModelStatus("Модель загружена: " + modelName);
+    } else {
+      showModelStatus("Ошибка: " + (result.error || "Неизвестная ошибка"), true);
+    }
+  } catch (error) {
+    showModelStatus("Ошибка: " + error.message, true);
+  }
+}
+
+async function unloadAIModel() {
+  const modelStatus = document.getElementById("modelStatus");
+  
+  showModelStatus("Выгрузка модели...");
+  
+  try {
+    const result = await callApi("api_agent_unload_model");
+    
+    if (result.success) {
+      showModelStatus("Модель выгружена");
+    } else {
+      showModelStatus("Ошибка: " + (result.error || "Неизвестная ошибка"), true);
+    }
+  } catch (error) {
+    showModelStatus("Ошибка: " + error.message, true);
+  }
+}
+
+function showModelStatus(message, isError = false) {
+  const modelStatus = document.getElementById("modelStatus");
+  if (modelStatus) {
+    modelStatus.textContent = message;
+    modelStatus.classList.add("visible");
+    if (isError) {
+      modelStatus.classList.add("error");
+    } else {
+      modelStatus.classList.remove("error");
+    }
+  }
+}
+
+function addAIChatMessage(text, type = "assistant") {
+  const chatLog = document.getElementById("agentChatLog");
+  if (!chatLog) return;
+  
+  const messageDiv = document.createElement("div");
+  messageDiv.className = "chat-message " + type;
+  
+  const headerLabels = {
+    user: "Вы",
+    assistant: "Агент",
+    system: "Система",
+    error: "Ошибка"
+  };
+  
+  messageDiv.innerHTML = `
+    <div class="message-header">${headerLabels[type] || "Агент"}</div>
+    <div class="message-body">${text.replace(/\n/g, "<br>")}</div>
+  `;
+  
+  chatLog.appendChild(messageDiv);
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function showAITypingIndicator() {
+  const chatLog = document.getElementById("agentChatLog");
+  if (!chatLog) return;
+  
+  const indicator = document.createElement("div");
+  indicator.className = "chat-message assistant";
+  indicator.id = "typingIndicator";
+  indicator.innerHTML = `
+    <div class="message-header">Агент</div>
+    <div class="message-body">
+      <div class="typing-indicator">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+  `;
+  chatLog.appendChild(indicator);
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function removeAITypingIndicator() {
+  const indicator = document.getElementById("typingIndicator");
+  if (indicator) {
+    indicator.remove();
+  }
+}
+  
+async function sendAICommand(command) {
+  if (!command || !command.trim()) return;
+  
+  addAIChatMessage(command, "user");
+  
+  const input = document.getElementById("agentInput");
+  if (input) {
+    input.value = "";
+  }
+  
+  showAITypingIndicator();
+  
+  try {
+    const result = await callApi("api_agent_execute", command);
+    
+    removeAITypingIndicator();
+    
+    const lastCommandEl = document.getElementById("agentLastCommand");
+    if (lastCommandEl) {
+      lastCommandEl.textContent = JSON.stringify(result, null, 2);
+    }
+    
+    // Поддерживаем оба формата: прямой result и обертку с action_result.
+    const actionResult = result && typeof result.action_result === "object"
+      ? result.action_result
+      : null;
+    const resultData = result && result.data
+      ? result.data
+      : (actionResult && actionResult.data ? actionResult.data : null);
+    const isChatCommand = Boolean(resultData && resultData.type === "chat");
+
+    // Проверяем требует ли команда подключения (из action_result или result)
+    const requiresConnection = result.requires_connection || (actionResult && actionResult.requires_connection);
+    
+    if (requiresConnection) {
+      // Текст из result.text или action_result.text
+      const connectionMessage = result.text || (actionResult && actionResult.text) || "Требуется подключение к контроллеру";
+      addAIChatMessage(connectionMessage, "assistant");
+      return;
+    }
+    
+    // Для разговорных команд показываем человекочитаемый текст.
+    if (isChatCommand) {
+      const chatText =
+        (typeof result.text === "string" && result.text.trim()) ||
+        (typeof actionResult?.text === "string" && actionResult.text.trim()) ||
+        (Array.isArray(result.response) && result.response.length > 0 ? result.response.join("; ") : "") ||
+        (Array.isArray(actionResult?.response) && actionResult.response.length > 0 ? actionResult.response.join("; ") : "") ||
+        "Разговорная команда";
+      addAIChatMessage(chatText, "assistant");
+      return;
+    }
+    
+    if (result.success) {
+      const responseText = formatAIResponse(result);
+      addAIChatMessage(responseText, "assistant");
+    } else {
+      const errorMsg = result.error || result.text || (actionResult && actionResult.error) || "Неизвестная ошибка";
+      addAIChatMessage(errorMsg, "error");
+    }
+    
+  } catch (error) {
+    removeAITypingIndicator();
+    addAIChatMessage(error.message, "error");
+  }
+}
+
+function clearAIChat() {
+  const chatLog = document.getElementById("agentChatLog");
+  const lastCommandEl = document.getElementById("agentLastCommand");
+  
+  if (chatLog) {
+    chatLog.innerHTML = `
+      <div class="chat-message system">
+        <div class="message-header">Система</div>
+        <div class="message-body">Чат очищен</div>
+      </div>
+    `;
+  }
+
+  if (lastCommandEl) {
+    lastCommandEl.textContent = "Ожидание команды...";
+  }
+  
+  callApi("api_agent_clear_history").catch(console.error);
+}
+
+function formatAIResponse(result) {
+  if (typeof result?.text === "string" && result.text.trim()) {
+    return result.text.trim();
+  }
+
+  const payload = result && typeof result.action_result === "object" && result.action_result
+    ? result.action_result
+    : result;
+
+  if (!payload || typeof payload !== "object") {
+    return "Команда выполнена";
+  }
+
+  const parts = [];
+
+  if (payload.action) {
+    parts.push("Действие: " + payload.action);
+  }
+
+  if (payload.command) {
+    parts.push("Команда: " + payload.command);
+  }
+
+  if (payload.scene) {
+    parts.push("Сцена: " + payload.scene);
+  }
+
+  if (payload.response && Array.isArray(payload.response) && payload.response.length > 0) {
+    parts.push("Ответ: " + payload.response.slice(0, 3).join("; "));
+    if (payload.response.length > 3) {
+      parts.push("... ещё " + (payload.response.length - 3) + " строк");
+    }
+  }
+
+  if (payload.data) {
+    if (payload.data.type === "time") {
+      parts.push("Время: " + payload.data.time + ", День " + payload.data.day + ", Дата " + payload.data.date);
+    } else if (payload.data.type === "geo") {
+      parts.push("Координаты: Lat=" + payload.data.lat + ", Lon=" + payload.data.lon + ", Zone=" + payload.data.zone);
+    } else if (payload.data.type === "keys" || payload.data.type === "mask") {
+      parts.push("Биты: A=" + (payload.data.a ? "1" : "0") + ", B=" + (payload.data.b ? "1" : "0") + ", C=" + (payload.data.c ? "1" : "0"));
+    }
+  }
+
+  return parts.join("\n") || "Команда выполнена";
+}

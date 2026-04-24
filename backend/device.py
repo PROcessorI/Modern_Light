@@ -54,6 +54,7 @@ class DeviceService:
         self._last_tx_monotonic = 0.0
         self._last_tx_command = ""
         self._tx_sequence = 0
+        self.test_mode = False  # Тестовый режим - не отправлять реальные команды
 
     # === Transmit pacing / low-level query ===
     # Device controllers require gaps between certain command types (COMA/COM)
@@ -175,11 +176,9 @@ class DeviceService:
 
         self._tx_sequence += 1
         previous_command = self._last_tx_command or "-"
-        # Явный вывод в консоль всех отправляемых команд с последней текущей командой.
-        print(
-            f"Sending command #{self._tx_sequence}: {command} | previous: {previous_command}",
-            flush=True,
-        )
+        # Логируем отправляемые команды
+        LOGGER.info("Sending command #%d: %s | previous: %s", 
+                    self._tx_sequence, command, previous_command)
         self._log("tx", command)
         payload = (command + "\r\n").encode("ascii", errors="ignore")
 

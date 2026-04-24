@@ -35,7 +35,8 @@ if IS_FROZEN:
     # В onefile-конфигурации сохраняем пользовательский ini рядом с exe.
     PROJECT_DIR = Path(sys.argv[0]).resolve().parent
 else:
-    PROJECT_DIR = APP_DIR.parent
+    # При запуске из IDE - рядом со скриптом
+    PROJECT_DIR = APP_DIR
 
 WEB_DIR = APP_DIR / "web"
 CONFIG_PATH = PROJECT_DIR / "config.ini"
@@ -47,6 +48,15 @@ APP_HOST = "127.0.0.1"
 APP_PORT = 8123
 APP_SIZE = (1460, 920)
 PORTS_CACHE_TTL_SECONDS = 3600.0
+
+
+def resource_path(relative_path: str) -> str:
+    """Get absolute path to resource, works for dev and for PyInstaller."""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 
 def _resolve_cache_dir() -> Path:
@@ -94,52 +104,41 @@ SCHEDULE_PATTERN = re.compile(
 
 
 def _resolve_log_path() -> Path:
-    """Возвращает путь к лог-файлу с fallback в LocalAppData при ошибках доступа."""
-    primary = PROJECT_DIR / "logs" / LOG_FILE_NAME
-    try:
-        primary.parent.mkdir(parents=True, exist_ok=True)
-        with primary.open("a", encoding="utf-8"):
-            pass
-        return primary
-    except OSError:
-        local_app_data = Path(os.environ.get("LOCALAPPDATA", str(PROJECT_DIR)))
-        fallback = local_app_data / "PLC_Nova" / "logs" / LOG_FILE_NAME
-        fallback.parent.mkdir(parents=True, exist_ok=True)
-        with fallback.open("a", encoding="utf-8"):
-            pass
-        return fallback
+    """Возвращает путь к лог-файлу в папке logs рядом со скриптом."""
+    print(f"[LOG] APP_FILE: {__file__}")
+    print(f"[LOG] APP_DIR: {APP_DIR}")
+    print(f"[LOG] PROJECT_DIR: {PROJECT_DIR}")
+    logs_dir = APP_DIR / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = logs_dir / LOG_FILE_NAME
+    
+    print(f"[LOG] Log path: {log_path}")
+    return log_path
 
 LOG_PATH = _resolve_log_path()
 
 
 def _configure_logging() -> logging.Logger:
-    """Инициализирует ротационный лог-файл для диагностики runtime-ошибок."""
-    logger = logging.getLogger("plc_nova")
-    logger.setLevel(logging.INFO)
+    """Инициализирует ротационный лог-файл для диагностики."""
+    # Используем конкретный logger для app - не propagate
+    logger = logging.getLogger("plc_nova.app")
+    logger.setLevel(logging.DEBUG)
     logger.propagate = False
-
-    normalized_path = str(LOG_PATH.resolve())
-    has_handler = False
-    for handler in logger.handlers:
-        base = getattr(handler, "baseFilename", "")
-        if base and str(Path(base).resolve()) == normalized_path:
-            has_handler = True
-            break
-
-    if not has_handler:
-        file_handler = RotatingFileHandler(
-            LOG_PATH,
-            maxBytes=2_000_000,
-            backupCount=5,
-            encoding="utf-8",
-        )
-        file_handler.setLevel(logging.INFO)
-        file_handler.setFormatter(
-            logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
-        )
-        logger.addHandler(file_handler)
-
-    return logging.getLogger("plc_nova.app")
+    logger.handlers = []  # Очищаем старые handlers
+    
+    file_handler = RotatingFileHandler(
+        LOG_PATH,
+        maxBytes=2_000_000,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+    )
+    logger.addHandler(file_handler)
+    
+    return logger
 
 
 APP_LOGGER = _configure_logging()
@@ -1384,6 +1383,298 @@ def api_get_connection_state() -> dict[str, object]:
     return device.get_connection_state()
 
 
+# === AI Agent API ===
+
+_agent_instance = None
+
+
+def _get_agent():
+    """Ленивая инициализация агента."""
+    global _agent_instance
+    if _agent_instance is None:
+        try:
+            sys.path.insert(0, str(APP_DIR))
+            from agent.main import PLCAgent
+            _agent_instance = PLCAgent(device)
+            _agent_instance.load_tools()
+            _agent_instance.load_skills()
+            _agent_instance.check_models()
+            _agent_instance.check_speech()
+            APP_LOGGER.info("AI Agent initialized with shared device")
+        except Exception as exc:
+            APP_LOGGER.exception("Failed to initialize AI Agent: %s", exc)
+            raise
+    return _agent_instance
+
+
+@_api_guard
+def api_agent_status() -> dict[str, object]:
+    """Возвращает статус AI-агента."""
+    APP_LOGGER.info("=== api_agent_status() called ===")
+    try:
+        agent = _get_agent()
+        status = agent.get_status()
+        APP_LOGGER.info("Status: %s", status)
+        return status
+    except Exception as exc:
+        APP_LOGGER.exception("AI Agent status failed: %s", exc)
+        return {
+            "models_available": False,
+            "speech_available": False,
+            "lm_studio_available": False,
+            "error": str(exc),
+        }
+
+
+@_api_guard
+def api_agent_execute(command: str) -> dict[str, object]:
+    """Выполняет команду пользователя через AI-агента."""
+    APP_LOGGER.info("=== api_agent_execute() called ===")
+    APP_LOGGER.info("Command: %s", command)
+    
+    agent = _get_agent()
+    
+    status = agent.get_status()
+    APP_LOGGER.info("Agent status: lm_studio=%s, model_key=%s", 
+                    status.get("lm_studio_available"), status.get("current_model"))
+    
+    system_prompt = """Ты - помощник для управления PLC-контроллерами освещения.
+Ты общительный и дружелюбный, всегда стремишься помочь пользователю достичь желаемого результата.
+Твоя задача: преобразовать запрос пользователя в команду(ы) протокола PLC или отвечать на вопросы пользователя.
+Если дана команда, тогда:
+ВЫВОДИ ТОЛЬКО СТАТУС И КОМАНДУ, без размышлений. Например: ВЫПОЛНЕНО: COMA000,011 - ЭТО ВАЖНО!
+Если пользовтаель задает вопрос, приветсвие или ведет разговор на другие темы не связанные с командами контроллерва, тогда отвечай кратко, по существу, без излишних деталей и размышлений. Всегда сохраняй фокус на том, чтобы помочь пользователю с его запросом.
+Например если пользователь спрашивает: Как настроить расписание? выводи команду для чтения и установки расписания с описанием параметров и так для всех команд.
+ВАЖНО: ВСЕГДА ОТВЕТЧАЙ НА РУССКОМ ЯЗЫКЕ. ОТВЕЧАЙ НА ДРУГИХ ЯЗЫКАХ ТОЛЬКО ЕСЛИ ПОЛЬЗОВАТЕЛЬ ЯВНО ОБРАТИТСЯ К ТЕБЕ НА ЭТОМ ЯЗЫКЕ. НЕ ПЕРЕХОДИ НА АНГЛИЙСКИЙ, ЕСЛИ НЕ ПРОСЯТ. ТАКЖЕ ВСЕГДА ДЕЛАЙ КРАСИВЫЙ И ПОНЯТНЫЙ ВЫВОД!
+ВАЖНО: НИКОГДА НЕ ВЫВОДИ ЧТО-ТО ТИПА: Приветствие/разговор: Пользователь прислал приветствие и команду. Нужно выполнить команду. ИЛИ Ответ должен быть только в формате статуса и команды. НЕ ПИШИ И НЕ ВЫВОДИ СВОИ РАЗМЫШЛЕНИЯ!
+САМОЕ ВАЖНОЕ: НЕ ВЫПОЛНЯЙ НИКАИХ КОМАНД ЕСЛИ ТЕБЯ НЕ ПРОСЯТ! НАПРИМЕР "Привет" ЭТО НЕ КОМАНДА!
+Пример: Привет! Выполни сценарий 1.
+
+Твой ответ должен быть: Привет! Выполняю команду! Стататус: ВЫПОЛНЕНО: COMA000,011
+
+===== КОМАНДЫ ПРОТОКОЛА (формат COMA000,CCC - адрес 000 для broadcast) =====
+
+1. ВЫКЛЮЧЕНИЕ ВСЕХ СВЕТИЛЬНИКОВ (самая важная!)
+   Запрос: "выключи все", "выключи свет", "выключи всё"
+   Формат: нужно отправить 4 КОМАНДЫ (для каждого канала):
+   COMA000,140 COMA000,160 COMA000,180 COMA000,200
+   (140=красный, 160=синий, 180=дальний красный, 200=белый)
+
+2. СЦЕНЫ (воспроизведение сцены)
+   Запрос: "сцена 1", "включи сценарий 1", "запусти сцену 5"
+   Формат: COMA000,010+N (N=1..20)
+   Пример: сцена 1 -> COMA000,011 (010+1=011)
+   Пример: сцена 5 -> COMA000,015 (010+5=015)
+
+3. ЯРКОСТЬ (управление яркостью, 0=выкл, 10=макс)
+   Запрос: "яркость 5", "включи свет", "свет на 50%"
+   Формат: канал 140+N (0=выкл, 10=макс)
+   Пример: яркость 10 -> COMA000,149 (140+9=149 для 100%)
+   Пример: яркость 5 -> COMA000,144 (50% -> 1)
+   Пример: яркость 0 -> COMA000,140 (выключено)
+
+4. ОТДЕЛЬНЫЕ КАНАЛЫ СПЕКТРА (ОДНА команда!)
+   Красный (BASE=140): "красный 50%", "красный на полную"
+   Синий (BASE=160): "синий 50%", "синий на полную"
+   Белый (BASE=200): "белый 50%", "белый на полную"
+   Дальний красный (BASE=180): "дальний красный 50%"
+   
+   ФОРМУЛА: COMA000,BASE+S
+   S = 0 (для 0%), 1 (для 1-10%), для 11-100%: S = процент/5 - 1
+   Пример: красный 20% -> S = 20/5 - 1 = 3 -> COMA000,143
+   Пример: белый 40% -> S = 40/5 - 1 = 7 -> COMA000,207
+   Пример: белый на полную (100%) -> S = 100/5 - 1 = 19 -> COMA000,219
+
+5. ЧТЕНИЕ ДАННЫХ
+   Время: "который час?", "время" -> TIME
+   Ключи: "какие ключи?", "keys" -> KEYS
+   Маска: "маска", "mask" -> MASK
+   Геолокация: "координаты", "гео" -> GEONEZ
+   Расписание: "расписание", "shed" -> SHED
+
+6. ЗАПИСЬ СЦЕНЫ (N=1..20)
+   Запрос: "запиши сцену 5"
+   Формат: COMA000,030+N
+   Пример: записать сцену 5 -> COMA000,035 (030+5=035)
+
+===== ПРИМЕРЫ ======
+"выключи всё" -> COMA000,140 COMA000,160 COMA000,180 COMA000,200
+"сцена 1" -> COMA000,011
+"яркость 10" -> COMA000,149
+"красный 20%" -> COMA000,143
+"белый 40%" -> COMA000,207
+"белый на полную" -> COMA000,219
+"""
+    
+    # Специальные вопросы - не через LM Studio
+    cmd_lower = command.lower()
+    if "порт" in cmd_lower or "com порт" in cmd_lower or "какие порты" in cmd_lower:
+        # Прямой запрос списка портов
+        from backend.device import list_available_ports
+        ports = list_available_ports()
+        if ports:
+            port_list = ", ".join(ports)
+            return {"success": True, "text": f"Доступные COM-порты: {port_list}", "action_result": {"ports": ports}}
+        else:
+            return {"success": True, "text": "COM-порты не обнаружены. Проверьте подключение USB-адаптера.", "action_result": {"ports": []}}
+    
+    if status.get("lm_studio_available") and status.get("current_model"):
+        response_text = agent.generate_response(command, system_prompt)
+        APP_LOGGER.info("Model full response: '%s'", response_text)
+        
+        # Парсим ответ - ищем PLC команду(ы) в тексте
+        import re
+        cmd_pattern = r'(COMA0{3},\d{3}|COM0{3},\d{3}|TIME|KEYS|MASK|GEONEZ|SHED)'
+        response_text = response_text or ""
+        matches = re.findall(cmd_pattern, response_text, re.IGNORECASE)
+        
+        if matches:
+            plc_command = " ".join(matches)
+        else:
+            lines = [line.strip() for line in (response_text or "").strip().split('\n') if line.strip()]
+            plc_command = lines[-1] if lines else command
+        
+        APP_LOGGER.info("Extracted PLC command: '%s'", plc_command)
+        
+        # Проверяем - это PLC команда? Если содержит COMA/COM/TIME и т.д.
+        is_plc_command = "COMA" in plc_command or "COM" in plc_command.upper() or plc_command.upper() in ["TIME", "KEYS", "MASK", "GEONEZ", "SHED"]
+        
+        # Выполняем команду если это PLC команда
+        if is_plc_command:
+            try:
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                # Выполняем команду
+                APP_LOGGER.info("Executing PLC command from model: '%s'", plc_command)
+                result = loop.run_until_complete(agent.execute(plc_command))
+                loop.close()
+                
+                # Проверяем требует ли команда подключения
+                if result.get("requires_connection"):
+                    # В реальном режиме без подключения - показываем приглашение
+                    if not getattr(agent, "test_mode", False):
+                        return {
+                            "success": True,
+                            "text": "Привет! Пожалуйста подключитесь к COM порту, чтобы я мог выполнить команду!",
+                            "action_result": result
+                        }
+                    else:
+                        # В тестовом режиме - это ошибка
+                        return {
+                            "success": False, 
+                            "text": response_text, 
+                            "error": "Нет подключения к контроллеру. Подключитесь к COM-порту.",
+                            "action_result": result
+                        }
+                
+                return {"success": result.get("success", True), "text": response_text, "action_result": result}
+            except Exception as exc:
+                APP_LOGGER.error("Agent execute error: %s", exc)
+                return {"success": False, "text": response_text, "action_result": {"error": str(exc)}}
+        
+        # Если не PLC команда - это чат
+        return {"success": True, "text": response_text, "action_result": {"type": "chat", "success": True}}
+    else:
+        try:
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(agent.execute(command))
+            loop.close()
+            return result
+        except Exception as exc:
+            APP_LOGGER.error("Agent execute error: %s", exc)
+            return {"success": False, "error": str(exc)}
+
+
+@_api_guard
+def api_agent_load_model(model_key: str, config: dict = None) -> dict[str, object]:
+    """Загружает модель в LM Studio."""
+    APP_LOGGER.info("=== api_agent_load_model() called ===")
+    APP_LOGGER.info("model_key=%s, config=%s", model_key, config)
+    
+    agent = _get_agent()
+    
+    if not model_key:
+        return {"success": False, "error": "Не указан ключ модели"}
+    
+    success = agent.load_model(model_key, config)
+    APP_LOGGER.info("load_model result: %s", success)
+    
+    if success:
+        return {"success": True, "message": f"Модель {model_key} загружена"}
+    else:
+        return {"success": False, "error": "Не удалось загрузить модель. Проверьте что LM Studio запущен."}
+
+
+@_api_guard
+def api_agent_unload_model() -> dict[str, object]:
+    """Выгружает модель из памяти."""
+    agent = _get_agent()
+    agent.unload_model()
+    return {"success": True, "message": "Модель выгружена"}
+
+
+@_api_guard
+def api_agent_clear_history() -> dict[str, object]:
+    """Очищает историю чата."""
+    agent = _get_agent()
+    agent.clear_chat_history()
+    return {"success": True, "message": "История очищена"}
+
+
+@_api_guard
+def api_agent_set_test_mode(enabled: bool) -> dict[str, object]:
+    """Включает или выключает тестовый режим агента."""
+    APP_LOGGER.info("=== api_agent_set_test_mode() called: enabled=%s ===", enabled)
+    agent = _get_agent()
+    agent.set_test_mode(enabled)
+    return {"success": True, "test_mode": enabled}
+
+@_api_guard
+def api_agent_refresh_models() -> dict[str, object]:
+    """Обновляет список доступных моделей из LM Studio."""
+    APP_LOGGER.info("=== api_agent_refresh_models() called ===")
+    agent = _get_agent()
+    
+    # Перезагружаем список моделей
+    agent.check_models()
+    models = agent.list_model_files()
+    
+    APP_LOGGER.info("Refreshed models: %d", len(models))
+    return {"success": True, "models": models}
+    
+
+@_api_guard
+def api_voice_recognize(audio_data: str, sample_rate: int = 16000) -> dict[str, object]:
+    """Распознаёт речь из аудио данных через Google Speech Recognition."""
+    APP_LOGGER.info("=== api_voice_recognize() called ===")
+    
+    agent = _get_agent()
+    
+    if not agent.speech_available:
+        APP_LOGGER.warning("Speech recognition not available")
+        return {"success": False, "error": "SpeechRecognition не доступен"}
+
+    try:
+        import base64
+        wav_bytes = base64.b64decode(audio_data)
+        APP_LOGGER.info("Processing %d bytes of audio", len(wav_bytes))
+        text = agent.recognize_speech(wav_bytes)
+        
+        if text:
+            APP_LOGGER.info("Recognized: %s", text)
+            return {"success": True, "transcript": text}
+        else:
+            APP_LOGGER.warning("No speech detected")
+            return {"success": False, "error": "Речь не распознана"}
+    except Exception as exc:
+        APP_LOGGER.error("Voice recognition error: %s", exc)
+        return {"success": False, "error": str(exc)}
+
+
 def _eel_close_callback(page: str, sockets: list[object]) -> None:
     """Сохраняет работу приложения после закрытия окна, чтобы оно оставалось в трее."""
     _ = (page, sockets)
@@ -1502,6 +1793,12 @@ def start() -> None:
     """Инициализирует Eel и запускает приложение с поддержкой системного трея."""
     APP_LOGGER.info("Application start. project_dir=%s config=%s log=%s", PROJECT_DIR, CONFIG_PATH, LOG_PATH)
     _clear_runtime_cache()
+    
+    # Устанавливаем переменную окружения для AI-агента (чтобы знал где искать модели)
+    import os
+    os.environ['APP_BASE_DIR'] = str(PROJECT_DIR)
+    APP_LOGGER.info("APP_BASE_DIR set to: %s", PROJECT_DIR)
+    
     eel.init(str(WEB_DIR))
 
     if pystray is None or Image is None:
@@ -1515,3 +1812,4 @@ def start() -> None:
 
 if __name__ == "__main__":
     start()
+
